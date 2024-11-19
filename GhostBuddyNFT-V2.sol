@@ -17,11 +17,11 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     uint256 public constant ORIGINAL_SUPPLY = 5555;
     uint256 public constant MAX_SUPPLY = 10000;
     uint96 public constant MAX_WL_MINT_PER_WALLET = 3;
-    uint96 public constant MAX_MINT_PER_TX = 3;
-    uint256 public mintPrice = 3000000000000000;
-    uint256 public expeditionFee = 100000000000000;
-    uint96 private _royaltyPercentage = 500;
-    uint256 private _minimumExpeditionTime = 86400; // 1 day
+    uint96 public constant MAX_MINT_PER_TX = 5;
+    uint256 public mintPrice = 3000000000000000; // 0.003 -- remove before flight
+    uint256 public expeditionFee = 2000000000000000; // 0.02 -- remove before flight
+    uint96 private _royaltyPercentage = 500; // 5% -- remove before flight
+    uint256 private _minimumExpeditionTime = 86400; // 1 day -- remove before flight
     
     bool public isWhitelistActive = false;
     bool public isPublicMintActive = false;
@@ -29,10 +29,13 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     string private constant _ogBaseURI = "ipfs://QmZFxhGiLp5Jo6GiLQeypJbwTRSbMLeDBTDLHiw2jCrqh4/";
     string private constant _ogImageURI = "ipfs://QmYThkCs5vihZZxZxRtYgf9ttZZd6ESqjn8uxcQxnsCrcd/";
-    string private constant _unrevealedURI = "https://brooklyn.hsd.services/uploads/cutemeta/gb/unrevealed.json"; // centralised for testing
-    string private _description; // = "Ghost Buddy V2: A collection of playful, interdimensional companions. When the portals between realms closed, 5555 Buddies got stranded. Now, with magic portals restored, these spirits can roam freely once more. In the Metaverse, they have built a vibrant realm to socialize, play games, and evolve. These spirits can embark on expeditions to earn rewards, customize with magical gear, and save their progress on-chain, unlocking endless customization and adventure.";
+    string private constant _unrevealedURI = "https://brooklyn.hsd.services/uploads/cutemeta/gb/unrevealed.json"; // centralised url for testing only
+    // Ghost Buddy V2: A collection of playful, interdimensional companions. When the portals between realms closed, 5555 Buddies got stranded. 
+    // Now, with magic portals restored, these spirits can roam freely once more. In the Metaverse, they have built a vibrant realm to socialize, play games, and evolve. 
+    // These spirits can embark on expeditions to earn rewards, customize with magical gear, and save their progress on-chain, unlocking endless customization and adventure.  -- remove before flight
+    string private _description;
     string private _imageURI;
-    string private _defaultVRMFile; // = "https://brooklyn.hsd.services/uploads/models/gb-basic.vrm";
+    string private _defaultVRMFile; // "https://brooklyn.hsd.services/uploads/models/gb-basic.vrm";
     mapping(uint256 => string) private _tokenTraits;
     mapping(uint256 => string) private _vrmFiles;
     mapping(uint256 => string) private _metaverseTraits;
@@ -40,7 +43,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     mapping(address => uint256) public whitelistMintCount;
     mapping(uint256 => bool) private _originalTokensMinted;
     
-    mapping(uint256 => uint256) private _expedition;
+    mapping(uint256 => uint256) private _expeditions;
     mapping(address => bool) public gamemasters;
 
     event Revealed();
@@ -235,22 +238,22 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     function startExpedition(uint256 tokenId) external payable {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(_expedition[tokenId] == 0, "On expedition");
+        require(_expeditions[tokenId] == 0, "On expedition");
         require(msg.value >= expeditionFee, "Insufficient payment");
         
-        _expedition[tokenId] = block.timestamp;
+        _expeditions[tokenId] = block.timestamp;
     }
 
     function endExpedition(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(_expedition[tokenId] > 0, "Not on expedition");
-        require(block.timestamp >= _expedition[tokenId] + _minimumExpeditionTime, "Still on expedition");
-        delete _expedition[tokenId];
+        require(_expeditions[tokenId] > 0, "Not on expedition");
+        require(block.timestamp >= _expeditions[tokenId] + _minimumExpeditionTime, "Still on expedition");
+        delete _expeditions[tokenId];
     }
 
     function getExpedition(uint256 tokenId) external view returns (uint256) {
         require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
-        return _expedition[tokenId];
+        return _expeditions[tokenId];
     }
 
     function _update(
@@ -258,7 +261,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
         uint256 tokenId,
         address auth
     ) internal virtual override returns (address) {
-        require(_expedition[tokenId] == 0, "On expedition");
+        require(_expeditions[tokenId] == 0, "On expedition");
         return super._update(to, tokenId, auth);
     }
 
