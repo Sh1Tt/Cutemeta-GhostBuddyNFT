@@ -18,10 +18,10 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     uint256 public constant MAX_SUPPLY = 10000;
     uint96 public constant MAX_WL_MINT_PER_WALLET = 3;
     uint96 public constant MAX_MINT_PER_TX = 5;
-    uint256 public mintPrice = 3000000000000000; // 0.003 -- remove before flight
-    uint256 public expeditionFee = 2000000000000000; // 0.02 -- remove before flight
-    uint96 private _royaltyPercentage = 500; // 5% -- remove before flight
-    uint256 private _minimumExpeditionTime = 86400; // 1 day -- remove before flight
+    uint256 public mintPrice = 3000000000000000;
+    uint256 public expeditionFee = 2000000000000000;
+    uint96 private _royaltyPercentage = 500;
+    uint256 private _minimumExpeditionTime = 86400; // 1 day
     
     bool public isWhitelistActive = false;
     bool public isPublicMintActive = false;
@@ -30,12 +30,9 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     string private constant _ogBaseURI = "ipfs://QmZFxhGiLp5Jo6GiLQeypJbwTRSbMLeDBTDLHiw2jCrqh4/";
     string private constant _ogImageURI = "ipfs://QmYThkCs5vihZZxZxRtYgf9ttZZd6ESqjn8uxcQxnsCrcd/";
     string private constant _unrevealedURI = "https://brooklyn.hsd.services/uploads/cutemeta/gb/unrevealed.json"; // centralised url for testing only
-    // Ghost Buddy V2: A collection of playful, interdimensional companions. When the portals between realms closed, 5555 Buddies got stranded. 
-    // Now, with magic portals restored, these spirits can roam freely once more. In the Metaverse, they have built a vibrant realm to socialize, play games, and evolve. 
-    // These spirits can embark on expeditions to earn rewards, customize with magical gear, and save their progress on-chain, unlocking endless customization and adventure.  -- remove before flight
     string private _description;
     string private _imageURI;
-    string private _defaultVRMFile; // "https://brooklyn.hsd.services/uploads/models/gb-basic.vrm";
+    string private _defaultVRMFile;
     mapping(uint256 => string) private _tokenTraits;
     mapping(uint256 => string) private _vrmFiles;
     mapping(uint256 => string) private _metaverseTraits;
@@ -43,7 +40,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     mapping(address => uint256) public whitelistMintCount;
     mapping(uint256 => bool) private _originalTokensMinted;
     
-    mapping(uint256 => uint256) private _expeditions;
+    mapping(uint256 => uint256) public expeditions;
     mapping(address => bool) public gamemasters;
 
     event Revealed();
@@ -102,7 +99,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     function publicMint(uint256 quantity) external payable {
         require(isPublicMintActive, "Public mint not active");
-        require(quantity <= MAX_MINT_PER_TX, "Max 3 per TX");
+        require(quantity <= MAX_MINT_PER_TX, "Exceeds max mint per tx");
         require(msg.value >= mintPrice * quantity, "Insufficient payment");
         require(_tokenIds.current() + quantity <= MAX_SUPPLY, "Exceeds max supply");
 
@@ -114,7 +111,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     function generateTokenURI(uint256 tokenId) internal view returns (string memory) {
         string memory attributes = string(abi.encodePacked(
-            bytes(_tokenTraits[tokenId]).length > 0 ? _tokenTraits[tokenId] : "",
+            _tokenTraits[tokenId],
             bytes(_metaverseTraits[tokenId]).length > 0 ? string(abi.encodePacked(', ', _metaverseTraits[tokenId])) : ""
         ));
 
@@ -151,13 +148,11 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
         if (isRevealed) {
             return generateTokenURI(tokenId);
         }
+        else if (tokenId < ORIGINAL_SUPPLY) {
+            return string(abi.encodePacked(_ogBaseURI, tokenId.toString()));
+        }
         else {
-            if (tokenId < ORIGINAL_SUPPLY) {
-                return string(abi.encodePacked(_ogBaseURI, tokenId.toString()));
-            }
-            else {
-                return _unrevealedURI;
-            }
+            return _unrevealedURI;
         }
     }
 
@@ -189,7 +184,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     function getVRMFile(uint256 tokenId) external view returns (string memory) {
         require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
-        return _vrmFiles[tokenId];
+        return bytes(_vrmFiles[tokenId]).length > 0 ? _vrmFiles[tokenId] : _defaultVRMFile;
     }
 
     function setMetaverseTraits(uint256 tokenId, string memory traits) external onlyGamemasterOrOwner {
@@ -238,22 +233,22 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     function startExpedition(uint256 tokenId) external payable {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(_expeditions[tokenId] == 0, "On expedition");
+        require(expeditions[tokenId] == 0, "On expedition");
         require(msg.value >= expeditionFee, "Insufficient payment");
         
-        _expeditions[tokenId] = block.timestamp;
+        expeditions[tokenId] = block.timestamp;
     }
 
     function endExpedition(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(_expeditions[tokenId] > 0, "Not on expedition");
-        require(block.timestamp >= _expeditions[tokenId] + _minimumExpeditionTime, "Still on expedition");
-        delete _expeditions[tokenId];
+        require(expeditions[tokenId] > 0, "Not on expedition");
+        require(block.timestamp >= expeditions[tokenId] + _minimumExpeditionTime, "Still on expedition");
+        delete expeditions[tokenId];
     }
 
     function getExpedition(uint256 tokenId) external view returns (uint256) {
         require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
-        return _expeditions[tokenId];
+        return expeditions[tokenId];
     }
 
     function _update(
@@ -261,7 +256,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
         uint256 tokenId,
         address auth
     ) internal virtual override returns (address) {
-        require(_expeditions[tokenId] == 0, "On expedition");
+        require(expeditions[tokenId] == 0, "On expedition");
         return super._update(to, tokenId, auth);
     }
 
