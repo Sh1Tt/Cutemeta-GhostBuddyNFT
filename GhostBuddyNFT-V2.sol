@@ -1,27 +1,28 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.23;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
+contract GhostBuddyNFT is Ownable2Step, ERC721, ERC2981, ReentrancyGuard {
     using Counters for Counters.Counter;
     using Strings for uint256;
 
     Counters.Counter private _tokenIds;
     
     uint256 public constant ORIGINAL_SUPPLY = 5555;
-    uint256 public constant MAX_SUPPLY = 10000;
+    uint256 public constant TOTAL_SUPPLY = 10000;
     uint96 public constant MAX_WL_MINT_PER_WALLET = 3;
     uint96 public constant MAX_MINT_PER_TX = 5;
     uint256 public mintPrice = 3000000000000000;
     uint256 public expeditionFee = 2000000000000000;
     uint96 private _royaltyPercentage = 500;
-    uint256 private _minimumExpeditionTime = 86400; // 1 day
+    uint256 private _minimumExpeditionTime = 86400;
     
     bool public isWhitelistActive = false;
     bool public isPublicMintActive = false;
@@ -29,7 +30,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
 
     string private constant _ogBaseURI = "ipfs://QmZFxhGiLp5Jo6GiLQeypJbwTRSbMLeDBTDLHiw2jCrqh4/";
     string private constant _ogImageURI = "ipfs://QmYThkCs5vihZZxZxRtYgf9ttZZd6ESqjn8uxcQxnsCrcd/";
-    string private constant _unrevealedURI = "https://brooklyn.hsd.services/uploads/cutemeta/gb/unrevealed.json"; // centralised url for testing only
+    string private constant _unrevealedURI = "ipfs://QmaBcavCoRGQMDMffubm25z6vssVsBpb2R1M9Dcs19HCLj/0";
     string private _description;
     string private _imageURI;
     string private _defaultVRMFile;
@@ -37,10 +38,8 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     mapping(uint256 => string) private _vrmFiles;
     mapping(uint256 => string) private _metaverseTraits;
     mapping(address => bool) public whitelist;
-    mapping(address => uint256) public whitelistMintCount;
-    mapping(uint256 => bool) private _originalTokensMinted;
-    
-    mapping(uint256 => uint256) public expeditions;
+    mapping(address => uint256) public whitelistMintCount;    
+    mapping(uint256 => uint256) private _expeditions;
     mapping(address => bool) public gamemasters;
 
     event Revealed();
@@ -65,45 +64,38 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     }
 
     function removeGamemaster(address _gamemaster) external onlyOwner {
-        gamemasters[_gamemaster] = false;
+        delete gamemasters[_gamemaster];
     }
 
-    function mintOriginalTokens(address[] memory originalHolders, uint256 startIndex, uint256 endIndex) external onlyOwner {
-        require(startIndex < ORIGINAL_SUPPLY, "Index out of bounds");
-        require(endIndex <= ORIGINAL_SUPPLY, "Index out of bounds");
-        require(startIndex < endIndex, "Invalid index range");
-        require(endIndex - startIndex == originalHolders.length, "Array length mismatch");
-        
-        for (uint256 i = 0; i < originalHolders.length; i++) {
+    function mintOriginalTokens(address[] memory originalHolders, uint256 startIndex) external onlyOwner {
+        for (uint256 i = 0; i < originalHolders.length; ++i) {
             uint256 tokenId = startIndex + i;
-            require(!_originalTokensMinted[tokenId], "Token already minted");
             _safeMint(originalHolders[i], tokenId);
-            _originalTokensMinted[tokenId] = true;
             _tokenIds.increment();
         }
     }
 
-    function whitelistMint(uint256 quantity) external payable {
-        require(isWhitelistActive, "WL mint not active");
-        require(whitelist[msg.sender], "Not whitelisted");
-        require(whitelistMintCount[msg.sender] + quantity <= MAX_WL_MINT_PER_WALLET, "Exceeds max per wallet");
+    function whitelistMint(uint256 quantity) external payable nonReentrant {
+        require(isWhitelistActive, "WL not active");
+        require(whitelist[msg.sender], "Not on list");
+        require(whitelistMintCount[msg.sender] + quantity <= MAX_WL_MINT_PER_WALLET, "Exceeds allowance");
         require(msg.value >= mintPrice * quantity, "Insufficient payment");
-        require(_tokenIds.current() + quantity <= MAX_SUPPLY, "Exceeds max supply");
+        require(_tokenIds.current() + quantity <= TOTAL_SUPPLY, "Exceeds max supply");
 
-        for (uint256 i = 0; i < quantity; i++) {
+        for (uint256 i = 0; i < quantity; ++i) {
             _safeMint(msg.sender, _tokenIds.current());
             _tokenIds.increment();
         }
         whitelistMintCount[msg.sender] += quantity;
     }
 
-    function publicMint(uint256 quantity) external payable {
-        require(isPublicMintActive, "Public mint not active");
-        require(quantity <= MAX_MINT_PER_TX, "Exceeds max mint per tx");
+    function publicMint(uint256 quantity) external payable nonReentrant {
+        require(isPublicMintActive, "Mint not active");
+        require(quantity <= MAX_MINT_PER_TX, "Exceeds tx size");
         require(msg.value >= mintPrice * quantity, "Insufficient payment");
-        require(_tokenIds.current() + quantity <= MAX_SUPPLY, "Exceeds max supply");
+        require(_tokenIds.current() + quantity <= TOTAL_SUPPLY, "Exceeds max supply");
 
-        for (uint256 i = 0; i < quantity; i++) {
+        for (uint256 i = 0; i < quantity; ++i) {
             _safeMint(msg.sender, _tokenIds.current());
             _tokenIds.increment();
         }
@@ -143,7 +135,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     }
 
     function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
 
         if (isRevealed) {
             return generateTokenURI(tokenId);
@@ -166,46 +158,50 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
         _imageURI = uri;
     }
 
+    function setTokenTraits(uint256[] calldata tokenIds, string[] calldata traits) external onlyOwner {
+        require(tokenIds.length == traits.length, "length mismatch");
+        
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
+            require(tokenIds[i] >= 0 && tokenIds[i] <= _tokenIds.current(), "Incorrect id");
+            require(bytes(_tokenTraits[tokenIds[i]]).length == 0, "Already set");
+            _tokenTraits[tokenIds[i]] = traits[i];
+        }
+    }
+
     function setDefaultVRMFile(string memory vrmFile) external onlyOwner {
         _defaultVRMFile = vrmFile;
     }
 
-    function setTokenTraits(uint256 tokenId, string memory traits) external onlyOwner {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
-        require(bytes(_tokenTraits[tokenId]).length == 0, "Already set");
-        _tokenTraits[tokenId] = traits;
-    }
-
     function setVRMFile(uint256 tokenId, string memory vrmFile) external onlyGamemasterOrOwner {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
         _vrmFiles[tokenId] = vrmFile;
         emit MetadataUpdate(tokenId);
     }
 
     function getVRMFile(uint256 tokenId) external view returns (string memory) {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
         return bytes(_vrmFiles[tokenId]).length > 0 ? _vrmFiles[tokenId] : _defaultVRMFile;
     }
 
     function setMetaverseTraits(uint256 tokenId, string memory traits) external onlyGamemasterOrOwner {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
         _metaverseTraits[tokenId] = traits;
         emit MetadataUpdate(tokenId);
     }
 
     function getMetaverseTraits(uint256 tokenId) external view returns (string memory) {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
         return _metaverseTraits[tokenId];
     }
 
     function addToWhitelist(address[] memory addresses) external onlyOwner {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             whitelist[addresses[i]] = true;
         }
     }
 
     function removeFromWhitelist(address[] memory addresses) external onlyOwner {
-        for (uint256 i = 0; i < addresses.length; i++) {
+        for (uint256 i = 0; i < addresses.length; ++i) {
             delete whitelist[addresses[i]];
         }
     }
@@ -226,29 +222,29 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
     function setMintPrice(uint256 newPrice) external onlyOwner {
         mintPrice = newPrice;
     }
-    
-    function setExpeditionFee(uint256 newFee) external onlyOwner {
-        expeditionFee = newFee;
-    }
 
-    function startExpedition(uint256 tokenId) external payable {
+    function startExpedition(uint256 tokenId) external payable nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(expeditions[tokenId] == 0, "On expedition");
+        require(_expeditions[tokenId] == 0, "On expedition");
         require(msg.value >= expeditionFee, "Insufficient payment");
         
-        expeditions[tokenId] = block.timestamp;
+        _expeditions[tokenId] = block.timestamp;
     }
 
     function endExpedition(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not owner");
-        require(expeditions[tokenId] > 0, "Not on expedition");
-        require(block.timestamp >= expeditions[tokenId] + _minimumExpeditionTime, "Still on expedition");
-        delete expeditions[tokenId];
+        require(_expeditions[tokenId] != 0, "Not on expedition");
+        require(block.timestamp >= _expeditions[tokenId] + _minimumExpeditionTime, "Still on expedition");
+        delete _expeditions[tokenId];
     }
 
     function getExpedition(uint256 tokenId) external view returns (uint256) {
-        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "False Id");
-        return expeditions[tokenId];
+        require(tokenId >= 0 && tokenId <= _tokenIds.current(), "Incorrect id");
+        return _expeditions[tokenId];
+    }
+    
+    function setExpeditionFee(uint256 newFee) external onlyOwner {
+        expeditionFee = newFee;
     }
 
     function _update(
@@ -256,7 +252,7 @@ contract GhostBuddyNFT is Ownable, ERC721, ERC2981 {
         uint256 tokenId,
         address auth
     ) internal virtual override returns (address) {
-        require(expeditions[tokenId] == 0, "On expedition");
+        require(_expeditions[tokenId] == 0, "On expedition");
         return super._update(to, tokenId, auth);
     }
 
